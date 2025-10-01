@@ -9,4 +9,4 @@ app = FastAPI(
 # Homepage
 @app.get("/", tags=["Home"])
 def get_home():
-    return {"message": "WELCOME TO LifeLink GH!"}
+    return {"message": "Welcome to LifeLink GH!!"}
