@@ -1,4 +1,7 @@
 from fastapi import FastAPI
+from routers.users import users_router
+from routers.volunteers import volunteers_router
+from routers.admin import admin_router
 
 
 app = FastAPI(
@@ -10,3 +13,10 @@ app = FastAPI(
 @app.get("/", tags=["Home"])
 def get_home():
     return {"message": "Welcome to LifeLink GH!!"}
+
+# Include routers
+app.include_router(users_router)
+
+app.include_router(volunteers_router)
+
+app.include_router(admin_router)
