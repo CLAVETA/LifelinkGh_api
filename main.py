@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from routers.users import users_router
 from routers.volunteers import volunteers_router
 from routers.admin import admin_router
+from routers.requests import requests_router
 
 
 app = FastAPI(
@@ -20,3 +21,5 @@ app.include_router(users_router)
 app.include_router(volunteers_router)
 
 app.include_router(admin_router)
+
+app.include_router(requests_router)
