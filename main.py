@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from routers.users import users_router
 from routers.volunteers import volunteers_router
 from routers.admin import admin_router
+from routers.donor import donors_router
+from routers.hospital import hospital_requests_router
+from routers.campaigns import campaigns_router
 
 
 app = FastAPI(
@@ -17,6 +20,12 @@ def get_home():
 # Include routers
 app.include_router(users_router)
 
+app.include_router(hospital_requests_router)
+
+app.include_router(donors_router)
+
 app.include_router(volunteers_router)
 
 app.include_router(admin_router)
+
+app.include_router(campaigns_router)
