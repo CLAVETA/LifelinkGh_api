@@ -14,4 +14,12 @@ LifelinkGh_db = mongo_client["LifelinkGh_db"]
 # Pick a connection to operate on
 users_collection = LifelinkGh_db["users"]
 
-requests_collection = LifelinkGh_db["requests"]
+volunteer_signups_collection = LifelinkGh_db["volunteer_signups"]
+
+hospital_requests_collection = LifelinkGh_db["hospital_requests"]
+
+donation_responses_collection = LifelinkGh_db["donation_responses"]
+
+donations_records_collection = LifelinkGh_db["donation_records"]
+
+campaigns_collection = LifelinkGh_db["campaigns"]
