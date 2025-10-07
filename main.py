@@ -20,12 +20,12 @@ def get_home():
 # Include routers
 app.include_router(users_router)
 
-app.include_router(volunteers_router)
-
-app.include_router(admin_router)
-
 app.include_router(hospital_requests_router)
 
 app.include_router(donors_router)
+
+app.include_router(volunteers_router)
+
+app.include_router(admin_router)
 
 app.include_router(campaigns_router)
