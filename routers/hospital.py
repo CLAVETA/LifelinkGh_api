@@ -39,7 +39,7 @@ def register_hospital(
         )
 
     # Hash the hospital's password securely using bcrypt
-    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()) @30 @60
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
     # Create the user document for the database
     user_data = {
@@ -189,7 +189,7 @@ def delete_request(request_id: str):
 
 @hospital_requests_router.post(
     "/responses/{response_id}/confirm-donation",
-    tags=["Hospitals", "Donations"],
+    tags=["Hospitals"],
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(has_roles(["hospital"]))],
 )
@@ -240,7 +240,7 @@ def confirm_donation(
 
 @hospital_requests_router.get(
     "/requests/{request_id}/responses",
-    tags=["Hospitals", "Donations"],
+    tags=["Hospitals"],
     dependencies=[Depends(has_roles(["hospital"]))],
 )
 def get_responses_for_request(request_id: str):
