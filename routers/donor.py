@@ -11,7 +11,7 @@ from routers.users import create_user_in_db, UserRole
 import math
 from geopy.geocoders import Nominatim
 
-# --- GLOBAL GEOLOCATOR INITIALIZATION ---
+# GLOBAL GEOLOCATOR INITIALIZATION 
 geolocator = Nominatim(user_agent="BloodDonationApp_FastAPI") 
 
 class DonationResponse(BaseModel):
@@ -49,7 +49,7 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 # DONOR MATCHING (GEOLOCATION)
 @donors_router.get(
     "/donors/search",
-    tags=["Donors"],
+    tags=["Hospitals"],
     status_code=status.HTTP_200_OK
 )
 def search_available_donors(
@@ -59,14 +59,14 @@ def search_available_donors(
     lon: Annotated[float, Query(description="The longitude of the hospital/request location.")],
     radius: Annotated[float, Query(description="The search radius in kilometers (km).", ge=1.0, le=100.0)]
 ):
-    # 1. AUTHORIZATION CHECK (Hospital Role Required)
+    # AUTHORIZATION CHECK (Hospital Role Required)
     if current_user["role"] != UserRole.HOSPITAL.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Only users with the 'HOSPITAL' role can search for donors."
         )
 
-    # 2. DATABASE QUERY & FILTERING
+    # DATABASE QUERY & FILTERING
     potential_donors = users_collection.find({ 
         "role": UserRole.DONOR.value,
         "blood_type": blood_type,
@@ -75,7 +75,7 @@ def search_available_donors(
     
     found_donors = []
     
-    # 3. GEOSPATIAL FILTERING (Manually filtering via Haversine)
+    # GEOSPATIAL FILTERING (Manually filtering via Haversine)
     for donor in potential_donors:
         try:
             lat_value = donor.get("lat")
