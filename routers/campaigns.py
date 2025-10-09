@@ -27,12 +27,14 @@ class CampaignAdminView(BaseModel):
     "/campaigns",
     tags=["Volunteers"],
     response_model=List[CampaignAdminView],
-    # Only approved volunteers can see active campaigns
+    # Only approved volunteers can see ALL campaigns
     dependencies=[Depends(require_approved_volunteer)]
 )
 def get_all_campaigns():
-    campaigns = campaigns_collection.find({"status": "active"})
+    """ Retrieves a list of ALL campaigns. Accessible to approved volunteers. """
+    campaigns = campaigns_collection.find() 
     return [replace_mongo_id(c) for c in campaigns]
+
 
 # Create a New Campaign
 @campaigns_router.post(
