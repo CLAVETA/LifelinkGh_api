@@ -4,3 +4,5 @@ python-dotenv
 python-multipart
 bcrypt
 pyjwt
+geopy
+google-genai
