@@ -23,3 +23,5 @@ donation_responses_collection = LifelinkGh_db["donation_responses"]
 donations_records_collection = LifelinkGh_db["donation_records"]
 
 campaigns_collection = LifelinkGh_db["campaigns"]
+
+educational_resources_collection = LifelinkGh_db["educational_resources"]

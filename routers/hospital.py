@@ -14,12 +14,17 @@ from db import users_collection
 from utils import replace_mongo_id
 from dependencies.authn import authenticated_user
 from dependencies.authz import has_roles
+from geopy.geocoders import Nominatim
+
+# GLOBAL GEOLOCATOR INITIALIZATION
+geolocator = Nominatim(user_agent="BloodDonationApp_FastAPI") 
 
 class DonationConfirmation(BaseModel):
     donation_date: str
     recipient_info: str 
 
 hospital_requests_router = APIRouter()
+
 
 @hospital_requests_router.post(
     "/hospitals/register", 
@@ -28,8 +33,9 @@ hospital_requests_router = APIRouter()
 )
 def register_hospital(
     hospital_name: Annotated[str, Form()], 
-    email: Annotated[EmailStr, Form()],    
+    email: Annotated[EmailStr, Form()],      
     password: Annotated[str, Form(min_length=8)], 
+    location_address: Annotated[str, Form()], 
 ):
     # Check if a user with the given email already exists
     if users_collection.count_documents({"email": email}) > 0:
@@ -37,25 +43,48 @@ def register_hospital(
             status_code=status.HTTP_409_CONFLICT,
             detail="A user with this email already exists."
         )
+    
+    # 1. GEOCORRECTION: Convert location name to coordinates
+    try:
+        geo_location = geolocator.geocode(location_address)
+        
+        if not geo_location:
+            # If the service cannot find the location (e.g., misspelling or vagueness)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Could not determine coordinates for '{location_address}'. Please be more specific or check spelling."
+            )
+        
+        # Extract and convert coordinates to strings for safe MongoDB storage
+        hospital_lat = str(geo_location.latitude)
+        hospital_lon = str(geo_location.longitude)
+        
+    except Exception as e:
+        # Catch network or API-related errors from geopy/Nominatim
+        print(f"Hospital Geocoding Error for {location_address}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error processing hospital location data due to external service issue. Please try again later."
+        )
 
-    # Hash the hospital's password securely using bcrypt
     hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
-    # Create the user document for the database
     user_data = {
         "full_name": hospital_name, 
         "email": email,
         "password": hashed_password,
         "role": UserRole.HOSPITAL.value, 
-        "created_at": datetime.now(timezone.utc)
+        "created_at": datetime.now(timezone.utc),
+        "location": location_address, 
+        "lat": hospital_lat,          
+        "lon": hospital_lon
     }
 
-    # Save the new hospital user into the database
     users_collection.insert_one(user_data)
 
-    return {"message": f"Hospital '{hospital_name}' registered successfully."}
+    return {"message": f"Hospital '{hospital_name}' registered successfully. Coordinates saved."}
 
-# Create a new request (Hospital role only) ---
+# Create a new request (Hospital role)
 @hospital_requests_router.post(
     "/requests",
     tags=["Hospitals"],
@@ -126,7 +155,7 @@ def get_all_requests(
     return {"data": list(map(replace_mongo_id, requests))}
 
 
-# Get specific request by ID
+# Get request by ID
 @hospital_requests_router.get("/requests/{request_id}", tags=["Hospitals"])
 def get_request_by_id(request_id):
     # check if reuest id is valid
