@@ -47,6 +47,7 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return distance 
 
 # DONOR MATCHING (GEOLOCATION)
+# DONOR MATCHING (GEOLOCATION)
 @donors_router.get(
     "/donors/search",
     tags=["Hospitals"],
@@ -55,8 +56,8 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 def search_available_donors(
     current_user: Annotated[dict, Depends(authenticated_user)],
     blood_type: Annotated[str, Query(description="The blood type to search for (e.g., O+, AB-).")],
-    lat: Annotated[float, Query(description="The latitude of the hospital/request location.")],
-    lon: Annotated[float, Query(description="The longitude of the hospital/request location.")],
+    # MODIFICATION: Replaced 'lat' and 'lon' with 'location_name'
+    location_name: Annotated[str, Query(description="The city or regional name of the hospital/request location.")], 
     radius: Annotated[float, Query(description="The search radius in kilometers (km).", ge=1.0, le=100.0)]
 ):
     # AUTHORIZATION CHECK (Hospital Role Required)
@@ -66,7 +67,28 @@ def search_available_donors(
             detail="Access denied. Only users with the 'HOSPITAL' role can search for donors."
         )
 
-    # DATABASE QUERY & FILTERING
+    # 1. GEOLOCATION STEP: Convert location name to coordinates
+    try:
+        geo_location = geolocator.geocode(location_name)
+        
+        if not geo_location:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Could not determine coordinates for '{location_name}'. Please be more specific or check spelling."
+            )
+        
+        # Coordinates of the hospital/request
+        hospital_lat = geo_location.latitude
+        hospital_lon = geo_location.longitude
+        
+    except Exception as e:
+        print(f"Hospital Geocoding Error for {location_name}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error processing location data due to external service issue. Please try again later."
+        )
+
+    # 2. DATABASE QUERY & FILTERING
     potential_donors = users_collection.find({ 
         "role": UserRole.DONOR.value,
         "blood_type": blood_type,
@@ -75,22 +97,24 @@ def search_available_donors(
     
     found_donors = []
     
-    # GEOSPATIAL FILTERING (Manually filtering via Haversine)
+    # 3. GEOSPATIAL FILTERING (Manually filtering via Haversine)
     for donor in potential_donors:
         try:
+            # Coordinates were saved as strings in 'register_donor' endpoint, so we retrieve them as such
             lat_value = donor.get("lat")
             lon_value = donor.get("lon")
             
             # Skip donor if coordinates are missing
             if lat_value is None or lon_value is None:
-                print(f"Skipping donor {donor.get('_id')}: Missing latitude/longitude data.")
+                # Optionally update donor to be 'unavailable' if data is consistently missing
                 continue
 
             # Convert to float for calculation (coordinates are stored as strings)
             donor_lat = float(lat_value)
             donor_lon = float(lon_value)
             
-            distance_km = haversine_distance(lat, lon, donor_lat, donor_lon)
+            # Use the calculated hospital coordinates here
+            distance_km = haversine_distance(hospital_lat, hospital_lon, donor_lat, donor_lon)
 
             if distance_km <= radius:
                 # Donor is within the search radius
@@ -111,12 +135,12 @@ def search_available_donors(
             print(f"!!!! ERROR: Failed to process donor {donor.get('_id')}. Reason: {e}")
             continue
 
-    # RESPONSE
+    # 4. RESPONSE
     if not found_donors:
-        return {"message": f"No available '{blood_type}' donors found within {radius}km."}
+        return {"message": f"No available '{blood_type}' donors found within {radius}km of '{location_name}'."}
     
     return {
-        "message": f"Found {len(found_donors)} available '{blood_type}' donors within {radius}km.",
+        "message": f"Found {len(found_donors)} available '{blood_type}' donors within {radius}km of '{location_name}'.",
         "donors": found_donors
     }
 
