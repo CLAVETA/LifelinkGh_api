@@ -44,7 +44,7 @@ def register_hospital(
             detail="A user with this email already exists."
         )
     
-    # 1. GEOCORRECTION: Convert location name to coordinates
+    # Convert location name to coordinates
     try:
         geo_location = geolocator.geocode(location_address)
         
