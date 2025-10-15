@@ -9,6 +9,7 @@ from db import users_collection
 from bson.objectid import ObjectId
 from routers.users import create_user_in_db, UserRole 
 import math
+import random
 from geopy.geocoders import Nominatim
 
 # GLOBAL GEOLOCATOR INITIALIZATION 
@@ -46,7 +47,74 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     distance = R * c
     return distance 
 
-# DONOR MATCHING (GEOLOCATION)
+# Blood Compatibility Mapping
+def get_compatible_donor_types(requested_type: str) -> list[str]:
+    """
+    Determines which donor blood types are compatible for donation to the requested recipient type.
+    """
+    requested_type = requested_type.upper().strip().replace(' ', '')
+
+    # Compatibility map: Recipient Type: [List of acceptable Donor Types]
+    compatibility_map = {
+        "O-": ["O-"],
+        "O+": ["O-", "O+"],
+        "A-": ["O-", "A-"],
+        "A+": ["O-", "O+", "A-", "A+"],
+        "B-": ["O-", "B-"],
+        "B+": ["O-", "O+", "B-", "B+"],
+        "AB-": ["O-", "A-", "B-", "AB-"],
+        "AB+": ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"] 
+    }
+    # Return the list of compatible types, defaulting to exact match if not found
+    return compatibility_map.get(requested_type, [requested_type])
+
+def find_nearby_donors(hospital_lat: float, hospital_lon: float, requested_blood_type: str, radius_km: float = 50.0):
+    """ Finds available donors compatible with the requested blood type within a radius. """
+    
+    # Determine all compatible donor types acceptable for the request
+    compatible_donor_types = get_compatible_donor_types(requested_blood_type)
+
+    # 1. Update the database query to use the list of compatible types
+    potential_donors = users_collection.find({
+        "role": UserRole.DONOR.value,
+        "blood_type": {"$in": compatible_donor_types}, # Use $in operator
+        "availability_status": "available"
+    })
+    
+    matched_donors = []
+    
+    # 2. Geospatial filtering (Haversine)
+    for donor in potential_donors:
+        lat_value = donor.get("lat")
+        lon_value = donor.get("lon")
+        
+        if lat_value is None or lon_value is None:
+            continue
+        
+        try:
+            donor_lat = float(lat_value)
+            donor_lon = float(lon_value)
+            distance_km = haversine_distance(hospital_lat, hospital_lon, donor_lat, donor_lon)
+            
+            if distance_km <= radius_km:
+                matched_donors.append({
+                    "id": str(donor["_id"]),
+                    "full_name": donor["full_name"],
+                    "phone_number": donor["phone_number"],
+                    "email": donor["email"],
+                    "blood_type": donor["blood_type"], # Donor's actual type
+                    "distance_km": round(distance_km, 2),
+                })
+        except ValueError:
+            continue
+
+    return matched_donors
+
+def generate_4_digit_token():
+    """ Generates a simple 4-digit numerical token string. """
+    return str(random.randint(1000, 9999))
+
+
 # DONOR MATCHING (GEOLOCATION)
 @donors_router.get(
     "/donors/search",
@@ -87,11 +155,15 @@ def search_available_donors(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing location data due to external service issue. Please try again later."
         )
+    
+     # Determine compatible donor types
+    compatible_donor_types = get_compatible_donor_types(blood_type)
+
 
     # 2. DATABASE QUERY & FILTERING
     potential_donors = users_collection.find({ 
         "role": UserRole.DONOR.value,
-        "blood_type": blood_type,
+        "blood_type": {"$in": compatible_donor_types},
         "availability_status": "available" 
     })
     
@@ -135,7 +207,7 @@ def search_available_donors(
             print(f"!!!! ERROR: Failed to process donor {donor.get('_id')}. Reason: {e}")
             continue
 
-    # 4. RESPONSE
+    # RESPONSE
     if not found_donors:
         return {"message": f"No available '{blood_type}' donors found within {radius}km of '{location_name}'."}
     
@@ -212,6 +284,27 @@ def respond_to_request(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request ID."
         )
+    try:
+        from db import hospital_requests_collection # Import inside the function if necessary, or at the top level
+    except ImportError:
+        # Fallback if your db structure requires top-level imports: ensure it is at the top
+        pass 
+        
+    request_doc = hospital_requests_collection.find_one({"_id": ObjectId(request_id)})
+    
+    if not request_doc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, 
+            "Blood request not found or is no longer active."
+        )
+        
+    # Optional: Check if the request status allows for new responses (e.g., must be 'active')
+    if request_doc.get("status") != "active":
+         raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, 
+            f"Cannot respond to request with status: {request_doc.get('status')}."
+        )
+
 
     # Check if the donor has already responded to this request
     existing_response = donation_responses_collection.find_one({
@@ -222,19 +315,26 @@ def respond_to_request(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "You have already responded to this request."
         )
-
+    # Generate Token ONLY if the donor commits
+    if commitment_status == "committed":
+        confirmation_token = generate_4_digit_token()
+    else:
+        confirmation_token = None
+    
     # Create the new response document
     response_data = {
         "request_id": ObjectId(request_id),
         "donor_id": current_user["id"],
         "status": commitment_status,
-        "responded_at": datetime.now(timezone.utc)
+        "responded_at": datetime.now(timezone.utc),
+        "confirmation_token": confirmation_token
     }
     inserted = donation_responses_collection.insert_one(response_data)
     
     return {
         "message": "Your response has been recorded. The hospital will be notified.",
-        "response_id": str(inserted.inserted_id)
+        "response_id": str(inserted.inserted_id),
+        "confirmation_token_if_committed": confirmation_token
     }
 
 @donors_router.get(
