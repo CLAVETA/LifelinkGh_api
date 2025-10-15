@@ -171,6 +171,7 @@ def create_request(
         "patient_condition": patient_condition,
         "hospital_id": current_user["id"],
         "status": "active",
+        "request_date": datetime.now(timezone.utc),
     }
     inserted = hospital_requests_collection.insert_one(request_data)
      # --- START NEW LOGIC FOR IMMEDIATE DONOR NOTIFICATION ---
