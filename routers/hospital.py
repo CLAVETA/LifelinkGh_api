@@ -430,3 +430,90 @@ def get_responses_for_request(request_id: str):
     responses = donation_responses_collection.find({"request_id": ObjectId(request_id)})
     
     return [replace_mongo_id(r) for r in responses]
+
+# update hospital profile
+@hospital_requests_router.put(
+    "/hospitals/me/profile",
+    tags=["Hospitals"],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(has_roles([UserRole.HOSPITAL.value]))] # Ensures only hospitals can access
+)
+def update_hospital_profile(
+    current_user: Annotated[dict, Depends(authenticated_user)],
+    hospital_name: Optional[str] = Form(None),
+    location_address: Optional[str] = Form(None)
+):
+    """
+    Allows an authenticated hospital to update its profile information.
+    All fields are optional.
+    """
+    update_data = {}
+    hospital_id = ObjectId(current_user["id"])
+
+    # The hospital's display name is stored in 'full_name' field in the user document
+    if hospital_name is not None:
+        update_data["full_name"] = hospital_name
+
+    # If location is updated, re-geocode to update coordinates @40
+    if location_address is not None:
+        update_data["location"] = location_address
+        try:
+            geo_location = geolocator.geocode(location_address)
+            if geo_location:
+                update_data["lat"] = str(geo_location.latitude)
+                update_data["lon"] = str(geo_location.longitude)
+            else:
+                update_data["lat"] = None
+                update_data["lon"] = None
+        except Exception as e:
+            print(f"Geocoding Error on hospital profile update for {location_address}: {e}")
+            pass
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No update fields provided."
+        )
+
+    result = users_collection.update_one(
+        {"_id": hospital_id},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hospital profile not found.")
+
+    return {"message": "Hospital profile updated successfully."}
+
+
+# delete hospital profile
+@hospital_requests_router.delete(
+    "/hospitals/me",
+    tags=["Hospitals"],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(has_roles([UserRole.HOSPITAL.value]))]
+)
+def delete_hospital_profile(
+    current_user: Annotated[dict, Depends(authenticated_user)]
+):
+    """
+    Allows an authenticated hospital to permanently delete its account and all
+    associated blood requests.
+    """
+    hospital_id_str = current_user["id"]
+    hospital_id_obj = ObjectId(hospital_id_str)
+
+    # First, delete all blood requests associated with this hospital
+    # This maintains data integrity, similar to deleting campaign signups @79
+    hospital_requests_collection.delete_many({"hospital_id": hospital_id_str})
+
+    # Next, delete the hospital's user document
+    result = users_collection.delete_one({"_id": hospital_id_obj})
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Hospital profile not found to delete."
+        )
+
+    return {"message": "Hospital account and all associated requests have been deleted successfully."}

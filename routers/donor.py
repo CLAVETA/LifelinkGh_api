@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Form, status, Depends, HTTPException, Query
 from datetime import datetime, timezone
 from dependencies.authn import authenticated_user
-from typing import Annotated, List
+from typing import Annotated, List,Optional
 from pydantic import EmailStr, BaseModel
 from db import donation_responses_collection
 from db import donations_records_collection
+from dependencies.authz import has_roles
 from db import users_collection
 from bson.objectid import ObjectId
 from routers.users import create_user_in_db, UserRole
@@ -399,3 +400,97 @@ def get_my_donation_history(current_user: Annotated[dict, Depends(authenticated_
             }
         )
     return history
+
+# update donor profile
+@donors_router.put(
+    "/donors/me/profile",
+    tags=["Donors"],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(has_roles([UserRole.DONOR.value]))] # Ensures only donors can access
+)
+def update_donor_profile(
+    current_user: Annotated[dict, Depends(authenticated_user)],
+    full_name: Optional[str] = Form(None),
+    phone_number: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    availability_status: Optional[str] = Form(None) # e.g., "available", "unavailable"
+):
+    """
+    Allows an authenticated donor to update their own profile information.
+    All fields are optional.
+    """
+    update_data = {}
+    donor_id = ObjectId(current_user["id"])
+
+    # Add provided fields to the update dictionary
+    if full_name is not None:
+        update_data["full_name"] = full_name
+    if phone_number is not None:
+        update_data["phone_number"] = phone_number
+    if availability_status is not None:
+        update_data["availability_status"] = availability_status
+
+    # If location is updated, coordinates must be updated as well @23
+    if location is not None:
+        update_data["location"] = location
+        try:
+            geo_location = geolocator.geocode(location)
+            if geo_location:
+                update_data["lat"] = str(geo_location.latitude)
+                update_data["lon"] = str(geo_location.longitude)
+            else:
+                # If new location can't be found, we can choose to fail or just update the name
+                # Here, we will just update the name and nullify coordinates to be safe
+                update_data["lat"] = None
+                update_data["lon"] = None
+        except Exception as e:
+            print(f"Geocoding Error on profile update for {location}: {e}")
+            # Do not block update if geocoding fails, just log it
+            pass
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No update fields provided."
+        )
+
+    # Perform the update in the database
+    result = users_collection.update_one(
+        {"_id": donor_id},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Donor profile not found.")
+
+    return {"message": "Donor profile updated successfully."}
+
+
+# delete donor profile
+@donors_router.delete(
+    "/donors/me",
+    tags=["Donors"],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(has_roles([UserRole.DONOR.value]))]
+)
+def delete_donor_profile(
+    current_user: Annotated[dict, Depends(authenticated_user)]
+):
+    """
+    Allows an authenticated donor to permanently delete their own account.
+    """
+    donor_id = ObjectId(current_user["id"])
+
+    # Delete the user document
+    result = users_collection.delete_one({"_id": donor_id})
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Donor profile not found to delete."
+        )
+
+    # Optional: Clean up related records (e.g., anonymize donation history)
+    # For now, we only delete the user profile as a primary action.
+
+    return {"message": "Donor account deleted successfully."}
