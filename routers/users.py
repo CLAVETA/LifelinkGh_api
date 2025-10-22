@@ -69,7 +69,7 @@ def login_user(
     payload = {
         "user_id": str(user_in_db["_id"]),
         "role": user_in_db["role"],
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=60) 
+        "exp": datetime.now(timezone.utc) + timedelta(days=7) 
     }
 
     # Encode the JWT
