@@ -317,6 +317,7 @@ def register_donor(
     "/donors/requests/{request_id}/respond",
     tags=["Donors"],
     status_code=status.HTTP_201_CREATED,
+    dependencies= [Depends(has_roles([UserRole.DONOR.value]))],  # Ensures only donors can access
 )
 def respond_to_request(
     request_id: str,
@@ -380,7 +381,9 @@ def respond_to_request(
 
 
 @donors_router.get(
-    "/donors/me/history", tags=["Donors"], response_model=List[DonationRecord]
+    "/donors/me/history", tags=["Donors"], 
+    response_model=List[DonationRecord],
+    dependencies=[Depends(has_roles([UserRole.DONOR.value]))]
 )
 def get_my_donation_history(current_user: Annotated[dict, Depends(authenticated_user)]):
     # Fetch donation records for the current donor
