@@ -166,11 +166,13 @@ def create_request(
     patient_condition: Annotated[str, Form()],
 ):
     request_data = {
+        "hospital_name": current_user.get("hospital_name") or current_user.get("full_name"),
         "blood_type": blood_type,
         "quantity": quantity,
         "patient_condition": patient_condition,
         "hospital_id": current_user["id"],
         "status": "active",
+        "location": current_user.get("location"),
         "request_date": datetime.now(timezone.utc),
     }
     inserted = hospital_requests_collection.insert_one(request_data)
@@ -246,13 +248,15 @@ def get_all_requests(
     if quantity_filter:
         query_filter["quantity"] = quantity_filter
     print(f"Constructed MongoDB query filter: {query_filter}")
-    requests = list(
+   
+    requests=list(
         hospital_requests_collection.find(
-            filter=query_filter,
+            filter =query_filter,
             limit=int(limit),
             skip=int(skip),
-        )
+            )
     )
+
     return {"data": list(map(replace_mongo_id, requests))}
 
 
