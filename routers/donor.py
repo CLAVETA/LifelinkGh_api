@@ -379,6 +379,22 @@ def respond_to_request(
         "confirmation_token_if_committed": confirmation_token,
     }
 
+@donors_router.get(
+    "/donors/me/profile", tags=["Donors"],dependencies=[Depends(has_roles([UserRole.DONOR.value]))]
+)
+def get_my_donor_profile(current_user: Annotated[dict, Depends(authenticated_user)]):
+    donor_id = ObjectId(current_user["id"])
+    donor_profile = users_collection.find_one({"_id": donor_id}, {"password": 0})  # Exclude password
+
+    if not donor_profile:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Donor profile not found.")
+
+    # Convert ObjectId to string for JSON serialization
+    donor_profile["id"] = str(donor_profile["_id"])
+    del donor_profile["_id"]
+
+    return donor_profile
+
 
 @donors_router.get(
     "/donors/me/history", tags=["Donors"], 
